@@ -1,0 +1,266 @@
+<head>
+  <!-- Import styles -->
+  <link rel="stylesheet" href="//unpkg.com/element-plus/dist/index.css" />
+  <link rel="stylesheet" href="/styles.css" />
+  <!-- Import Vue 3 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- Import Element Plus component library -->
+  <script src="//unpkg.com/element-plus"></script>
+  <!-- Import axios -->
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <!-- Import Font Awesome icons-->
+  <script src="https://kit.fontawesome.com/a1e0e0d112.js" crossorigin="anonymous"></script>
+  <!-- Import JsScript for loading Google Maps API-->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/script.js/2.5.9/script.min.js"></script>
+  <!--Import DayWeather Component-->
+  <script src="/DayWeather.js"></script>
+</head>
+
+<div id="app" class="main-wrapper">
+    <!--Entry Bar and Logo-->
+    <div class="main-view">
+        <span class="logo">
+            <i v-bind:class="this.logo"></i>
+        </span>
+        <p class="title">City Weather</p>
+        <p v-if="this.failure.failure" class="error">{{this.failure.string}}</p>
+        <el-input class="search" v-model="input" placeholder="Enter your city here!" v-on:change="enteredCity"></el-input>
+        <p>or pick a location</p>
+    </div>
+    <!--The div element for the map -->
+    <div id="map"></div>
+    <!--Wrapper for the data being displayed-->
+    <div class="details-wrapper" v-if="gotWeather.bool">
+        <!--Details title-->
+        <div class="details">
+            <p class="city_title">{{citySelected + ' Weather'}}</p>
+            <el-divider class="divider"></el-divider>
+        <p class="looks_like_title">Looks Like You Will</p>
+        <!--'Looks like section'-->
+        <div class="looks_like_section">
+            <!--Pack For Cold/Mild/Hot-->
+            <div class="looks_like" v-if="packFor ==='Cold'">
+                <el-card shadow="hover" >
+                    <div class="looks-like-card"> 
+                        <i class="fa-solid fa-snowflake fa-2x"></i>
+                        <p>Pack for Cold Weather - It's chilly</p>
+                    </div>
+                </el-card>
+            </div>
+            <div class="looks_like" v-else-if="packFor === 'Mild'">
+                <el-card shadow="hover" >
+                    <div class="looks-like-card"> 
+                        <i class="fa-solid fa-shirt fa-2x"></i>
+                        <p>Pack for Mild Weather</p>
+                    </div>
+                </el-card>
+            </div>
+            <div class="looks_like" v-else-if="packFor === 'Hot'">
+                <el-card shadow="hover" >
+                    <div class="looks-like-card"> 
+                        <i class="fa-solid fa-sunglasses fa-2x"></i>
+                        <p>Pack for Hot Weather - It's pretty hot!</p>
+                    </div>
+                </el-card>
+            </div>
+            <!--Pack Umbrella-->
+            <div class="looks_like" v-if="packUmbrella">
+                <el-card shadow="hover" >
+                    <div class="looks-like-card"> 
+                        <i class="fa-solid fa-umbrella fa-2x"></i>
+                        <p>Bring an umbrella - It's going to rain</p>
+                    </div>
+                </el-card>
+            </div>
+            <!--Wear a Mask-->
+            <div class="looks_like" v-if="wearMask === true">
+                <el-card shadow="hover" >
+                    <div class="looks-like-card"> 
+                        <i class="fa-solid fa-mask-face fa-2x"></i>
+                        <p>Bring a mask - air pollution is high</p>
+                    </div>
+                </el-card>
+            </div>
+            <div class="looks_like" v-else-if="wearMask === false">
+                <el-card shadow="hover" >
+                    <div class="looks-like-card"> 
+                        <i class="fa-solid fa-face-smile fa-2x"></i>
+                        <p>No Mask Required - air pollution is low</p>
+                    </div>
+                </el-card>
+            </div>
+            <div class="looks_like" v-else-if="wearMask === -1">
+                <el-card shadow="hover" >
+                    <div class="looks-like-card"> 
+                        <i class="fa-solid fa-exclamation fa-2x"></i>
+                        <p>No information regarding air pollution</p>
+                    </div>
+                </el-card>
+            </div>
+        </div>
+        </div>
+        <!--Day Weather components for each weather returned in response-->
+        <div class="weather-wrapper">
+            <day-weather v-for="weather in this.weatherData.weather" :weather-data="weather">
+            </day-weather>
+        </div>
+    </div> 
+</div>
+
+
+<script>
+    const App = {
+        mounted(){
+            //GOOGLE MAPS --------------------------------------------------------------------------------------------------
+            //Load Script
+            $script('https://maps.googleapis.com/maps/api/js?key=AIzaSyAMgeKNgj6kq_KBVGw8cH4lmkqLQPVInEs&v=weekly', ()=>{
+                const dublin = { lat:  53.3498006, lng: -6.2602964 };
+                this.map = new google.maps.Map(document.getElementById("map"), {
+                    zoom: 4,
+                    center: dublin,
+                });
+                this.map.setOptions({disableDoubleClickZoom: true });
+                // The marker, positioned at Dublin
+                this.marker = new google.maps.Marker({
+                    position: dublin,
+                    map: this.map,
+                });
+                //Listening for double clicks 
+                this.map.addListener("dblclick", (e) => {
+                    //Set new position of marker
+                    this.marker.setPosition(e.latLng)
+                    //Change the centre for the app and make request to the back end 
+                    this.newCentre(e.latLng.lat(), e.latLng.lng())
+                });
+            })
+        },
+        data() {
+            return {
+                logo:'fa-solid fa-sun fa-8x', 
+                citySelected:'', 
+                failure:{failure: false, string: ''},
+                weatherData:{weather:[]}, 
+                packUmbrella: false, 
+                packFor: '',
+                wearMask: false,
+                gotWeather:{bool:false},
+                input:'', 
+                lat:0,
+                lon:0,
+                map: undefined, 
+                marker: undefined
+            }
+        },
+        methods:{
+            /*
+             animateLogo(success)
+             - Animates the sun logo based on whether there was a valid response from the server
+            */
+            animateLogo(success){
+                console.log(this.logo)
+                if(success){
+                    this.logo="fa-solid fa-sun fa-8x fa-bounce"
+                    setTimeout(()=>{
+                      this.logo="fa-solid fa-sun fa-8x"
+                    }, 500)
+                } else {
+                    this.logo="fa-solid fa-sun fa-8x fa-shake"
+                    setTimeout(() => {
+                        this.logo="fa-solid fa-sun fa-8x"
+                    }, 500)
+                }
+            },
+            /*
+             changeMapCentre(lat,lon)
+              - Changes the centre of the map when a city name is entered AND there is a valid response
+            */
+            changeMapCentre(lat, lon){
+                const newLoc = {lat: lat, lng: lon};
+                this.map.setCenter(newLoc)
+                this.marker.setPosition(newLoc)
+            },
+            /*
+             newCentre(lat, lon)
+             - Triggers when there is a double click on the map.
+             - Makes a request to the server for weather information regarding the point clicked by passing the latitude and longitude. 
+             */
+            newCentre(lat, lon){
+                console.log('CENTRE CHANGED ON MAP.')
+                this.gotWeather.bool = false; //Unload previous data 
+                console.log('New Lat: ' + lat + '\nNew Lon: ' + lon)
+                axios.get(`http://localhost:3000/api/location/?lat=${lat}&lon=${lon}`)
+                .then(response => {
+                    console.log(response.data)
+                    this.animateLogo(true)
+                    this.weatherData.weather = response.data.weather
+                    this.failure.failure=false
+                    this.citySelected='Location';
+                    this.packUmbrella = response.data.packUmbrella
+                    this.packFor = response.data.packFor
+                    this.wearMask = response.data.wearMask
+                    this.lat = response.data.lat
+                    this.lon = response.data.lon
+                    console.log(this.packFor)
+                    //Show data
+                    this.gotWeather.bool = true
+                })
+                .catch(err => {
+                    this.animateLogo(false)
+                    this.failure.failure = true; //Trigger error string
+                    if(err.response.data.errCode == 0) this.failure.string = 'Looks like no weather data was found for' + city + ' 😔'
+                    else if(err.response.data.errCode == 1) this.failure.string = 'Looks like that city doesn\'t exist 😕'
+                })
+            },
+            /*
+             getData(city) 
+             - Takes a user inputted city and makes a request to the server with the city. 
+             - If the city is a valid city, the response data is displayed to the user. 
+             - Else, triggers an error message to appear. 
+            */
+            getData(city) {
+                this.gotWeather.bool = false;
+                console.log('Getting data for ... ')
+                axios.get(`http://localhost:3000/api/city/?city=${city}`)
+                .then(response => {
+                    console.log(response.data)
+                    this.animateLogo(true)
+                    this.weatherData.weather = response.data.weather
+                    this.failure.failure=false
+                    this.citySelected=city;
+                    this.packUmbrella = response.data.packUmbrella
+                    this.packFor = response.data.packFor
+                    this.wearMask = response.data.wearMask
+                    this.lat = response.data.lat
+                    this.lon = response.data.lon
+                    this.changeMapCentre(this.lat, this.lon)
+                    console.log(this.packFor)
+                    //Unhide
+                    this.gotWeather.bool = true
+                })
+                .catch(err => {
+                    console.log(err.response.data.msg)
+                    this.animateLogo(false)
+                    this.failure.failure = true; 
+                    if(err.response.data.errCode == 0) this.failure.string = 'Looks like no weather data was found for' + city + ' 😔'
+                    else if(err.response.data.errCode == 1) this.failure.string = 'Looks like that city doesn\'t exist 😕'
+                })
+            },
+            /*
+            enteredCity(value)
+             - Triggered when the user hits enter in the search bar. 
+            */
+            enteredCity(value){
+                console.log('Finding weather for city : ' + value)
+                this.getData(value)
+                this.input = ''
+            },
+        },
+        components: {
+            'day-weather':DayWeather
+        }
+      };
+    const app = Vue.createApp(App);
+    app.use(ElementPlus);
+    app.mount("#app")
+</script>
+
